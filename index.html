@@ -16,6 +16,10 @@
     />
 
     <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="manifest.json" />
+
+    <meta name="theme-color" content="#0f0f1a" />
+    <link rel="apple-touch-icon" href="icon.png" />
   </head>
   <body>
     <div class="app-container">
@@ -56,6 +60,20 @@
                 required
               ></textarea>
             </div>
+
+            <!-- Sub-Task Builder -->
+            <div class="form-group subtask-builder" id="subtaskBuilder">
+              <div class="subtask-inputs" id="subtaskInputs">
+                <!-- Dynamic subtask inputs will appear here -->
+              </div>
+              <button type="button" class="add-subtask-btn" id="addSubtaskBtn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 4v16m8-8H4"/>
+                </svg>
+                Tambah Sub Tugas
+              </button>
+            </div>
+
             <div class="form-group">
               <label class="priority-label">Level Prioritas:</label>
               <div class="priority-selector">

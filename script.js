@@ -1,4 +1,7 @@
-// ===== 1. DOM Elements (Mengambil elemen HTML yang dibutuhkan) =====
+// ===== 1. KONFIGURASI STORAGE (localStorage) =====
+const STORAGE_KEY = "todoAppData";
+
+// ===== 2. DOM Elements =====
 const taskForm = document.getElementById("taskForm");
 const taskInput = document.getElementById("taskInput");
 const todoList = document.getElementById("todoList");
@@ -10,15 +13,16 @@ const emptyDone = document.getElementById("emptyDone");
 const deleteAllBtn = document.getElementById("deleteAllBtn");
 const currentDayEl = document.getElementById("currentDay");
 const currentDateEl = document.getElementById("currentDate");
+const addSubtaskBtn = document.getElementById("addSubtaskBtn");
+const subtaskInputs = document.getElementById("subtaskInputs");
 
-// ===== 2. State (Penyimpanan Data Sementara) =====
-// Menggunakan object dengan dua array: 'todo' untuk yang belum selesai, 'done' untuk yang selesai.
+// ===== 3. State (Wadah Sementara di Browser) =====
 let tasks = {
   todo: [],
   done: [],
 };
 
-// ===== 3. Konfigurasi Tanggal & Waktu (Bahasa Indonesia) =====
+// ===== 4. Konfigurasi Tanggal =====
 const days = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 const months = [
   "Januari",
@@ -35,171 +39,179 @@ const months = [
   "Desember",
 ];
 
-// ===== 4. Initialize App (Fungsi yang jalan saat aplikasi dibuka) =====
+// ===== 5. Initialize App =====
 function init() {
-  loadFromStorage(); // Ambil data dari LocalStorage
-  updateDateTime(); // Update jam di header
-  renderTasks(); // Tampilkan daftar tugas ke layar
-
-  // Update waktu setiap 1 menit
+  updateDateTime();
+  loadTasks();
   setInterval(updateDateTime, 60000);
-
-  // Cek tugas yang kadaluarsa (overdue) setiap 1 menit
-  setInterval(checkOverdueTasks, 60000);
+  setInterval(renderTasks, 60000); // Re-render buat update status overdue
 }
 
-// ===== 5. Fungsi Update Tanggal Header =====
-function updateDateTime() {
-  const now = new Date();
-  const dayName = days[now.getDay()];
-  const date = now.getDate();
-  const monthName = months[now.getMonth()];
-  const year = now.getFullYear();
-
-  currentDayEl.textContent = dayName;
-  currentDateEl.textContent = `${date} ${monthName} ${year}`;
+// ===== 6. STORAGE: LOAD DATA =====
+function loadTasks() {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY);
+    if (data) {
+      tasks = JSON.parse(data);
+    }
+  } catch (error) {
+    console.error("Gagal load data:", error);
+    tasks = { todo: [], done: [] };
+  }
+  renderTasks();
 }
 
-// ===== 6. Helper: Format Tanggal untuk Tugas =====
-function formatTaskDate(timestamp) {
-  const date = new Date(timestamp);
-  const dayName = days[date.getDay()];
-  const day = date.getDate();
-  const monthName = months[date.getMonth()];
-  const hours = date.getHours().toString().padStart(2, "0");
-  const minutes = date.getMinutes().toString().padStart(2, "0");
-
-  return `${dayName}, ${day} ${monthName} - ${hours}:${minutes}`;
+// ===== 7. STORAGE: SAVE DATA =====
+function saveTasks() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  } catch (error) {
+    console.error("Gagal simpan data:", error);
+  }
 }
 
-// ===== 7. Helper: Generate ID Unik =====
+// ===== 8. GENERATE UNIQUE ID =====
 function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
 }
 
-// ===== 8. CORE FUNCTION: Tambah Tugas Baru =====
-function addTask(text, priority) {
-  const task = {
+// ===== 9. CORE: TAMBAH TUGAS =====
+function addTask(text, priority, subtasks) {
+  const newTask = {
     id: generateId(),
-    text: text.trim(),
-    priority: priority, // low, medium, atau high
+    text: text,
+    priority: priority,
+    isCompleted: false,
     createdAt: Date.now(),
-    isOverdue: false,
+    completedAt: null,
+    subtasks: subtasks || [], // Array of { id, text, isDone }
   };
 
-  // Masukkan ke array 'todo' paling depan (unshift)
-  tasks.todo.unshift(task);
-  saveToStorage();
+  tasks.todo.unshift(newTask); // Tambah di awal
+  saveTasks();
   renderTasks();
 }
 
-// ===== 9. CORE FUNCTION: Tandai Selesai (Pindah ke Done) =====
-function toggleComplete(taskId) {
-  // Cari tugas di array todo
-  const taskIndex = tasks.todo.findIndex((t) => t.id === taskId);
-
-  if (taskIndex !== -1) {
-    // Hapus dari todo, simpan di variabel sementara
-    const task = tasks.todo.splice(taskIndex, 1)[0];
-    // Tambahkan properti waktu selesai
-    task.completedAt = Date.now();
-    task.isOverdue = false; // Reset overdue jika sudah selesai
-    // Masukkan ke array done
-    tasks.done.unshift(task);
-  }
-
-  saveToStorage();
-  renderTasks();
-}
-
-// ===== 10. CORE FUNCTION: Batalkan Selesai (Kembali ke Todo) =====
-function undoComplete(taskId) {
-  const taskIndex = tasks.done.findIndex((t) => t.id === taskId);
-
-  if (taskIndex !== -1) {
-    const task = tasks.done.splice(taskIndex, 1)[0];
-    delete task.completedAt; // Hapus properti waktu selesai
-    tasks.todo.unshift(task);
-  }
-
-  saveToStorage();
-  renderTasks();
-}
-
-// ===== 11. CORE FUNCTION: Hapus Satu Tugas =====
-function deleteTask(taskId, listType) {
-  // Tambahkan efek animasi dulu
-  const taskElement = document.querySelector(`[data-id="${taskId}"]`);
-
-  if (taskElement) {
-    taskElement.classList.add("removing");
-
-    // Tunggu animasi selesai (300ms) baru hapus data
-    setTimeout(() => {
-      if (listType === "todo") {
-        tasks.todo = tasks.todo.filter((t) => t.id !== taskId);
-      } else {
-        tasks.done = tasks.done.filter((t) => t.id !== taskId);
-      }
-
-      saveToStorage();
-      renderTasks();
-    }, 300);
-  }
-}
-
-// ===== 12. CORE FUNCTION: Hapus Semua =====
-function deleteAll() {
-  if (tasks.todo.length === 0 && tasks.done.length === 0) return;
-
-  if (confirm("Apakah Anda yakin ingin menghapus semua tugas?")) {
-    tasks.todo = [];
-    tasks.done = [];
-    saveToStorage();
-    renderTasks();
-  }
-}
-
-// ===== 13. Logic: Cek Keterlambatan (Overdue) =====
-function checkOverdueTasks() {
-  const now = Date.now();
-  const overdueThreshold = 24 * 60 * 60 * 1000; // Batas waktu 24 jam
-  let hasChanges = false;
-
-  tasks.todo.forEach((task) => {
-    const isOverdue = now - task.createdAt > overdueThreshold;
-    if (task.isOverdue !== isOverdue) {
-      task.isOverdue = isOverdue;
-      hasChanges = true;
+// ===== 10. CORE: TOGGLE COMPLETE (Tugas Tanpa Subtask) =====
+function toggleComplete(taskId, isDone) {
+  if (isDone) {
+    // Pindah dari todo ke done
+    const index = tasks.todo.findIndex((t) => t.id === taskId);
+    if (index !== -1) {
+      const task = tasks.todo.splice(index, 1)[0];
+      task.isCompleted = true;
+      task.completedAt = Date.now();
+      // Tandai semua subtask selesai juga
+      task.subtasks.forEach((st) => (st.isDone = true));
+      tasks.done.unshift(task);
     }
-  });
-
-  if (hasChanges) {
-    saveToStorage();
-    renderTasks();
+  } else {
+    // Pindah dari done ke todo (un-complete)
+    const index = tasks.done.findIndex((t) => t.id === taskId);
+    if (index !== -1) {
+      const task = tasks.done.splice(index, 1)[0];
+      task.isCompleted = false;
+      task.completedAt = null;
+      // Reset semua subtask jadi belum selesai
+      task.subtasks.forEach((st) => (st.isDone = false));
+      tasks.todo.unshift(task);
+    }
   }
+
+  saveTasks();
+  renderTasks();
 }
 
-// ===== 14. RENDER: Menampilkan Data ke HTML =====
+// ===== 11. CORE: TOGGLE SUBTASK CHECKBOX =====
+function toggleSubtask(taskId, subtaskId) {
+  const task = tasks.todo.find((t) => t.id === taskId);
+  if (!task) return;
+
+  const subtask = task.subtasks.find((st) => st.id === subtaskId);
+  if (!subtask) return;
+
+  subtask.isDone = !subtask.isDone;
+
+  // Cek apakah semua subtask sudah selesai -> auto-complete tugas utama
+  const allDone = task.subtasks.every((st) => st.isDone);
+  if (allDone && task.subtasks.length > 0) {
+    // Kasih delay kecil biar user liat progress 100% dulu
+    saveTasks();
+    renderTasks();
+    setTimeout(() => {
+      toggleComplete(taskId, true);
+    }, 600);
+    return;
+  }
+
+  saveTasks();
+  renderTasks();
+}
+
+// ===== 12. CORE: HAPUS TUGAS =====
+function deleteTask(taskId) {
+  // Efek visual optimis
+  const el = document.querySelector(`[data-id="${taskId}"]`);
+  if (el) el.classList.add("removing");
+
+  setTimeout(() => {
+    tasks.todo = tasks.todo.filter((t) => t.id !== taskId);
+    tasks.done = tasks.done.filter((t) => t.id !== taskId);
+    saveTasks();
+    renderTasks();
+  }, 300);
+}
+
+// ===== 13. CORE: HAPUS SEMUA =====
+function deleteAll() {
+  if (!confirm("Yakin mau hapus semua tugas?")) return;
+
+  tasks.todo = [];
+  tasks.done = [];
+  saveTasks();
+  renderTasks();
+}
+
+// ===== 14. HELPER FUNCTIONS =====
+function updateDateTime() {
+  const now = new Date();
+  currentDayEl.textContent = days[now.getDay()];
+  currentDateEl.textContent = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+}
+
+function formatTaskDate(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} - ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function escapeHTML(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ===== 15. PROGRESS CALCULATION =====
+function getProgress(task) {
+  if (task.isCompleted) return 100;
+  if (task.subtasks.length === 0) return 0; // Tugas tanpa subtask -> 0 atau 100 (toggle langsung)
+  const done = task.subtasks.filter((st) => st.isDone).length;
+  return Math.round((done / task.subtasks.length) * 100);
+}
+
+// ===== 16. RENDER ENGINE =====
 function renderTasks() {
-  // Update status overdue sebelum render
   const now = Date.now();
   const overdueThreshold = 24 * 60 * 60 * 1000;
 
-  tasks.todo.forEach((task) => {
-    task.isOverdue = now - task.createdAt > overdueThreshold;
-  });
+  // Cek Overdue Logic
+  tasks.todo.forEach(
+    (t) => (t.isOverdue = now - t.createdAt > overdueThreshold),
+  );
 
-  // --- Render List Todo ---
-  const todoHTML = tasks.todo
-    .map((task) => createTaskHTML(task, "todo"))
-    .join("");
-
-  // Bersihkan list lama
-  const existingTodoItems = todoList.querySelectorAll(".task-item");
-  existingTodoItems.forEach((item) => item.remove());
-
-  // Tampilkan item baru atau pesan kosong
+  // Render Todo
+  const todoHTML = tasks.todo.map((t) => createTaskHTML(t, "todo")).join("");
+  todoList.innerHTML = "";
   if (tasks.todo.length > 0) {
     emptyTodo.classList.add("hidden");
     todoList.insertAdjacentHTML("beforeend", todoHTML);
@@ -207,14 +219,9 @@ function renderTasks() {
     emptyTodo.classList.remove("hidden");
   }
 
-  // --- Render List Done ---
-  const doneHTML = tasks.done
-    .map((task) => createTaskHTML(task, "done"))
-    .join("");
-
-  const existingDoneItems = doneList.querySelectorAll(".task-item");
-  existingDoneItems.forEach((item) => item.remove());
-
+  // Render Done
+  const doneHTML = tasks.done.map((t) => createTaskHTML(t, "done")).join("");
+  doneList.innerHTML = "";
   if (tasks.done.length > 0) {
     emptyDone.classList.add("hidden");
     doneList.insertAdjacentHTML("beforeend", doneHTML);
@@ -222,133 +229,205 @@ function renderTasks() {
     emptyDone.classList.remove("hidden");
   }
 
-  // Update angka counter di header section
+  // Update Counts & Buttons
   todoCount.textContent = tasks.todo.length;
   doneCount.textContent = tasks.done.length;
-
-  // Matikan tombol hapus semua jika tidak ada data
   deleteAllBtn.disabled = tasks.todo.length === 0 && tasks.done.length === 0;
 
-  // Pasang event listener ke elemen yang baru dibuat
   attachEventListeners();
 }
 
-// ===== 15. HTML Generator: Membuat Template Item Tugas =====
 function createTaskHTML(task, listType) {
   const isCompleted = listType === "done";
   const overdueClass = task.isOverdue && !isCompleted ? "overdue" : "";
   const completedClass = isCompleted ? "completed" : "";
-  const displayDate = isCompleted
-    ? formatTaskDate(task.completedAt)
-    : formatTaskDate(task.createdAt);
+  const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+  const progress = getProgress(task);
 
-  // Mengembalikan string HTML (Template String)
+  // Progress bar color logic
+  let progressColorClass = "progress-active"; // Accent purple-ish
+  if (progress === 100) progressColorClass = "progress-done";
+  if (progress === 0 && !hasSubtasks) progressColorClass = "progress-empty";
+
+  // Build subtask list HTML
+  let subtaskHTML = "";
+  if (hasSubtasks) {
+    const subtaskItems = task.subtasks
+      .map(
+        (st) => `
+      <div class="subtask-item" data-subtask-id="${st.id}">
+        <div class="subtask-checkbox-wrapper">
+          <input type="checkbox" class="subtask-checkbox" ${st.isDone ? "checked" : ""} ${isCompleted ? "disabled" : ""}>
+        </div>
+        <span class="subtask-text ${st.isDone ? "subtask-done" : ""}">${escapeHTML(st.text)}</span>
+      </div>`,
+      )
+      .join("");
+
+    subtaskHTML = `
+      <div class="subtask-dropdown">
+        <button type="button" class="subtask-toggle-btn" aria-label="Toggle subtasks">
+          <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+          <span class="subtask-summary">${task.subtasks.filter((s) => s.isDone).length}/${task.subtasks.length} sub-tugas selesai</span>
+        </button>
+        <div class="subtask-list collapsed">
+          ${subtaskItems}
+        </div>
+      </div>`;
+  }
+
+  // Main checkbox: hanya muncul jika TIDAK punya subtask
+  const checkboxHTML = hasSubtasks
+    ? `<div class="checkbox-wrapper checkbox-placeholder"></div>`
+    : `<div class="checkbox-wrapper">
+         <input type="checkbox" class="task-checkbox" ${isCompleted ? "checked" : ""}>
+       </div>`;
+
   return `
-        <div class="task-item ${overdueClass} ${completedClass}" data-id="${task.id}" data-list="${listType}">
-            <div class="checkbox-wrapper">
-                <input 
-                    type="checkbox" 
-                    class="task-checkbox" 
-                    ${isCompleted ? "checked" : ""}
-                    aria-label="Mark task as ${isCompleted ? "incomplete" : "complete"}"
-                >
-            </div>
+    <div class="task-item ${overdueClass} ${completedClass} ${hasSubtasks ? "has-subtasks" : ""}" data-id="${task.id}" data-list="${listType}">
+        <div class="task-item-header">
+            ${checkboxHTML}
             <div class="task-content">
                 <p class="task-text">${escapeHTML(task.text)}</p>
                 <div class="task-meta">
-                    <span class="task-date">${displayDate}</span>
+                    <span class="task-date">${formatTaskDate(isCompleted ? task.completedAt : task.createdAt)}</span>
                     <span class="priority-badge ${task.priority}">${task.priority}</span>
                 </div>
             </div>
             <div class="task-actions">
-                <button class="delete-btn" aria-label="Delete task">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                    </svg>
-                </button>
+                <button class="delete-btn"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
             </div>
         </div>
-    `;
+        ${subtaskHTML}
+        <div class="progress-bar-container">
+            <div class="progress-bar-fill ${progressColorClass}" style="width: ${progress}%"></div>
+        </div>
+        <div class="progress-label">
+            <span>${progress}%</span>
+        </div>
+    </div>`;
 }
 
-// ===== 16. Security: Mencegah XSS (Cross Site Scripting) =====
-function escapeHTML(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-// ===== 17. Event Binding: Menghubungkan Klik User ke Fungsi =====
+// ===== 17. EVENT LISTENERS =====
 function attachEventListeners() {
-  // Listener untuk Checkbox (Selesai/Belum)
-  document.querySelectorAll(".task-checkbox").forEach((checkbox) => {
-    checkbox.addEventListener("change", (e) => {
-      const taskItem = e.target.closest(".task-item");
-      const taskId = taskItem.dataset.id;
-      const listType = taskItem.dataset.list;
-
-      if (listType === "todo") {
-        toggleComplete(taskId);
-      } else {
-        undoComplete(taskId);
-      }
+  // Main task checkboxes (hanya tugas tanpa subtask)
+  document.querySelectorAll(".task-checkbox").forEach((cb) => {
+    cb.addEventListener("change", (e) => {
+      const id = e.target.closest(".task-item").dataset.id;
+      const isDone = e.target.checked;
+      toggleComplete(id, isDone);
     });
   });
 
-  // Listener untuk Tombol Hapus per Item
+  // Subtask checkboxes
+  document.querySelectorAll(".subtask-checkbox").forEach((cb) => {
+    cb.addEventListener("change", (e) => {
+      const taskItem = e.target.closest(".task-item");
+      const subtaskItem = e.target.closest(".subtask-item");
+      const taskId = taskItem.dataset.id;
+      const subtaskId = subtaskItem.dataset.subtaskId;
+      toggleSubtask(taskId, subtaskId);
+    });
+  });
+
+  // Delete buttons
   document.querySelectorAll(".delete-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
-      const taskItem = e.target.closest(".task-item");
-      const taskId = taskItem.dataset.id;
-      const listType = taskItem.dataset.list;
+      const id = e.target.closest(".task-item").dataset.id;
+      deleteTask(id);
+    });
+  });
 
-      deleteTask(taskId, listType);
+  // Subtask dropdown toggles
+  document.querySelectorAll(".subtask-toggle-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const dropdown = e.target.closest(".subtask-dropdown");
+      const list = dropdown.querySelector(".subtask-list");
+      const chevron = dropdown.querySelector(".chevron-icon");
+      list.classList.toggle("collapsed");
+      chevron.classList.toggle("rotated");
     });
   });
 }
 
-// ===== 18. Local Storage: Simpan & Muat Data dari Browser =====
-function saveToStorage() {
-  try {
-    localStorage.setItem("todoApp_tasks", JSON.stringify(tasks));
-  } catch (e) {
-    console.error("Error saving to localStorage:", e);
-  }
+// ===== 18. SUBTASK FORM BUILDER =====
+let subtaskCounter = 0;
+
+addSubtaskBtn.addEventListener("click", () => {
+  subtaskCounter++;
+  const inputRow = document.createElement("div");
+  inputRow.className = "subtask-input-row";
+  inputRow.innerHTML = `
+    <span class="subtask-input-number">${subtaskCounter}</span>
+    <input type="text" class="subtask-text-input" placeholder="Sub tugas..." />
+    <button type="button" class="remove-subtask-btn" aria-label="Hapus sub tugas">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+  `;
+
+  // Remove button handler
+  inputRow.querySelector(".remove-subtask-btn").addEventListener("click", () => {
+    inputRow.classList.add("removing");
+    setTimeout(() => {
+      inputRow.remove();
+      renumberSubtasks();
+    }, 250);
+  });
+
+  subtaskInputs.appendChild(inputRow);
+
+  // Auto-focus the new input
+  inputRow.querySelector(".subtask-text-input").focus();
+});
+
+function renumberSubtasks() {
+  const rows = subtaskInputs.querySelectorAll(".subtask-input-row");
+  subtaskCounter = rows.length;
+  rows.forEach((row, i) => {
+    row.querySelector(".subtask-input-number").textContent = i + 1;
+  });
 }
 
-function loadFromStorage() {
-  try {
-    const stored = localStorage.getItem("todoApp_tasks");
-    if (stored) {
-      tasks = JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error("Error loading from localStorage:", e);
-    tasks = { todo: [], done: [] };
-  }
-}
-
-// ===== 19. Main Event Listeners (Tombol Submit & Hapus Semua) =====
+// ===== 19. FORM SUBMIT =====
 taskForm.addEventListener("submit", (e) => {
-  e.preventDefault(); // Mencegah reload halaman
-
+  e.preventDefault();
   const text = taskInput.value.trim();
   if (!text) return;
-
-  // Ambil nilai radio button yang dipilih
   const priority = document.querySelector(
     'input[name="priority"]:checked',
   ).value;
 
-  addTask(text, priority);
+  // Ambil semua sub-tugas dari form builder
+  const subtaskEls = subtaskInputs.querySelectorAll(".subtask-text-input");
+  const subtasks = [];
+  subtaskEls.forEach((input) => {
+    const val = input.value.trim();
+    if (val) {
+      subtasks.push({
+        id: generateId(),
+        text: val,
+        isDone: false,
+      });
+    }
+  });
 
-  // Reset form setelah submit
+  addTask(text, priority, subtasks);
+
+  // Reset form
   taskInput.value = "";
+  subtaskInputs.innerHTML = "";
+  subtaskCounter = 0;
+
+  // Reset priority ke Low
   document.getElementById("priorityLow").checked = true;
-  taskInput.focus();
 });
 
 deleteAllBtn.addEventListener("click", deleteAll);
 
-// ===== 20. Start Application saat Halaman Siap =====
+// Start
 document.addEventListener("DOMContentLoaded", init);

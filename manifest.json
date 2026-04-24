@@ -1,0 +1,15 @@
+{
+  "name": "To-Do List Fikri",
+  "short_name": "ToDo Fikri",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f0f1a",
+  "theme_color": "#0f0f1a",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
